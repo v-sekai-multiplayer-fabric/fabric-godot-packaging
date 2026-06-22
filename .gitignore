@@ -1,0 +1,4 @@
+# stage tree + built packages
+/stage/
+/dist/
+*.pfx

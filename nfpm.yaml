@@ -1,0 +1,79 @@
+# nFPM config — builds the loot-action loop-slice as native Linux packages
+# (.deb/.rpm) from the staged /opt/org.v-sekai tree.  nFPM writes the archives
+# natively, so no dpkg/rpmbuild toolchain is needed (runs in any CI leg).
+#   packaging/stage.sh && nfpm pkg -f packaging/nfpm.yaml -p deb -t dist/
+#   packaging/stage.sh && nfpm pkg -f packaging/nfpm.yaml -p rpm -t dist/
+#
+# Package id is deb/rpm-clean (no dots); the reverse-DNS namespace lives on disk
+# under /opt/org.v-sekai, not in the package name.
+name: v-sekai-loop-slice
+arch: amd64
+platform: linux
+version: ${LOOP_PKG_VERSION}
+section: games
+priority: optional
+maintainer: v-sekai <ernest.lee@chibifire.com>
+description: |
+  Loot-action loop-slice — the playable instanced core-loop vertical slice
+  (hub deck, party teleport, the timed melee combo, first-touch loot contention,
+  and the sqlite profile commit), server-authoritative over WebTransport/QUIC.
+  Installs the exported client and a headless dedicated-server unit under
+  /opt/org.v-sekai.
+vendor: v-sekai
+homepage: https://github.com/v-sekai-multiplayer-fabric/godot-loop-slice
+license: MIT
+
+# Whole staged vendor tree -> filesystem root.  One mapping keeps deb and rpm
+# byte-identical in layout and lets stage.sh own the structure.
+contents:
+  - src: stage/opt/org.v-sekai
+    dst: /opt/org.v-sekai
+  - src: stage/usr/share/applications/org.v-sekai.loop-slice.desktop
+    dst: /usr/share/applications/org.v-sekai.loop-slice.desktop
+    file_info:
+      mode: 0644
+  # Dedicated-server unit (headless authority). Not auto-enabled; an admin runs
+  # `systemctl enable --now loop-slice-server` to host.
+  - src: systemd/loop-slice-server.service
+    dst: /usr/lib/systemd/system/loop-slice-server.service
+    file_info:
+      mode: 0644
+  - src: sysusers/loop-slice-server.conf
+    dst: /usr/lib/sysusers.d/loop-slice-server.conf
+    file_info:
+      mode: 0644
+  - src: systemd/loop-slice-server.env
+    dst: /etc/default/loop-slice-server
+    type: config|noreplace
+    file_info:
+      mode: 0644
+
+scripts:
+  postinstall: scripts/postinstall.sh
+  postremove: scripts/postremove.sh
+
+overrides:
+  rpm:
+    # /opt is owned by filesystem on RPM distros; don't let rpm try to own it.
+    # This list REPLACES the top-level contents for rpm, so every non-/opt file
+    # is repeated here or rpm packages would ship without it.
+    contents:
+      - src: stage/opt/org.v-sekai
+        dst: /opt/org.v-sekai
+      - src: stage/usr/share/applications/org.v-sekai.loop-slice.desktop
+        dst: /usr/share/applications/org.v-sekai.loop-slice.desktop
+        file_info:
+          mode: 0644
+      - src: systemd/loop-slice-server.service
+        dst: /usr/lib/systemd/system/loop-slice-server.service
+        file_info:
+          mode: 0644
+      - src: sysusers/loop-slice-server.conf
+        dst: /usr/lib/sysusers.d/loop-slice-server.conf
+        file_info:
+          mode: 0644
+      - src: systemd/loop-slice-server.env
+        dst: /etc/default/loop-slice-server
+        type: config|noreplace
+        file_info:
+          mode: 0644

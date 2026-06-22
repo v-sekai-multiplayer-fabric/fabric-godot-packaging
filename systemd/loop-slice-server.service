@@ -1,0 +1,38 @@
+[Unit]
+Description=Loot-action loop-slice dedicated server — headless authority over WebTransport/QUIC
+Documentation=https://github.com/v-sekai-multiplayer-fabric/godot-loop-slice
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=exec
+User=loop-slice
+Group=loop-slice
+
+# Host/port and any tuning live in /etc/default/loop-slice-server. The leading
+# '-' means a missing file is not an error (the defaults below apply). server.gd
+# reads LOOP_HOST/LOOP_PORT from the environment.
+EnvironmentFile=-/etc/default/loop-slice-server
+Environment=LOOP_HOST=0.0.0.0
+Environment=LOOP_PORT=4433
+
+ExecStart=/opt/org.v-sekai/loop-slice/0.1/bin/loop-slice-server
+
+Restart=on-failure
+RestartSec=2
+
+# Hardening — the authority needs only its install tree and a network socket.
+WorkingDirectory=/opt/org.v-sekai/loop-slice/0.1/share/loop-slice
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ProtectControlGroups=yes
+ProtectKernelTunables=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+# A writable spot for the sqlite profile commit the loop performs.
+StateDirectory=loop-slice
+ReadWritePaths=/var/lib/loop-slice
+
+[Install]
+WantedBy=multi-user.target

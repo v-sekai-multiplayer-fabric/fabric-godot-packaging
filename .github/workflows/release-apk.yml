@@ -1,0 +1,71 @@
+# Export the Quest 3 APK with the merged double-precision build and attach it to
+# a release on this packaging repo. The game source (godot-loop-slice) is checked
+# out beside this repo; the editor + the matching double Android template come
+# from v-sekai-multiplayer-fabric/godot-images (the tag that built the assembly).
+name: Release APK
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Release version (e.g. 0.1.0)
+        required: true
+        default: 0.1.0
+      godot_images_tag:
+        description: godot-images release tag providing the merged editor + double templates
+        required: true
+      editor_asset:
+        description: Editor asset name in that release
+        required: true
+        default: godot.linuxbsd.editor.double.x86_64
+      android_template_asset:
+        description: Android double export template asset name
+        required: true
+        default: android_release.apk
+
+permissions:
+  contents: write
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { path: fabric-packaging }
+      - uses: actions/checkout@v4
+        with: { repository: v-sekai-multiplayer-fabric/godot-loop-slice, path: godot-loop-slice }
+
+      - name: Fetch merged editor + Android template from godot-images
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.inputs.godot_images_tag }}
+        run: |
+          mkdir -p tools ci-templates
+          gh release download "$TAG" -R v-sekai-multiplayer-fabric/godot-images \
+            -p '${{ github.event.inputs.editor_asset }}' -D tools
+          chmod +x "tools/${{ github.event.inputs.editor_asset }}"
+          gh release download "$TAG" -R v-sekai-multiplayer-fabric/godot-images \
+            -p '${{ github.event.inputs.android_template_asset }}' -D ci-templates
+          # The Android preset references a custom template by absolute path; repoint
+          # it at the CI copy so the export is reproducible.
+          tmpl="$PWD/ci-templates/${{ github.event.inputs.android_template_asset }}"
+          sed -i "s|custom_template/debug=.*|custom_template/debug=\"$tmpl\"|; s|custom_template/release=.*|custom_template/release=\"$tmpl\"|" godot-loop-slice/export_presets.cfg
+
+      - name: Export APK
+        working-directory: godot-loop-slice
+        run: |
+          GODOT="$GITHUB_WORKSPACE/tools/${{ github.event.inputs.editor_asset }}"
+          mkdir -p build
+          "$GODOT" --headless --import . || true
+          "$GODOT" --headless --export-release "Android" build/loop-slice.apk
+          ls -la build/loop-slice.apk
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ver="${{ github.event.inputs.version }}"
+          gh release create "v$ver" godot-loop-slice/build/loop-slice.apk \
+            --title "loop-slice v$ver" \
+            --notes "Quest 3 APK (arm64, double, OpenXR) for the loot-action loop-slice." \
+            || gh release upload "v$ver" godot-loop-slice/build/loop-slice.apk --clobber

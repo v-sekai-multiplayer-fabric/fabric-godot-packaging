@@ -1,0 +1,76 @@
+# windows-latest CI: export the Win64 loop-slice with the merged double build,
+# then pack/sign one .msix. Set secrets LOOP_PFX_BASE64 + LOOP_PFX_PASSWORD for a
+# trusted cert; without them the job self-signs a TEST cert (installable only
+# after trusting it). The game source (godot-loop-slice) is checked out beside
+# this repo; the editor + double Windows template come from
+# v-sekai-multiplayer-fabric/godot-images.
+name: Release MSIX
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Four-part package version (e.g. 0.1.0.0)
+        required: true
+        default: 0.1.0.0
+      godot_images_tag:
+        description: godot-images release tag providing the merged editor + double templates
+        required: true
+      editor_asset:
+        description: Windows editor asset name in that release
+        required: true
+        default: godot.windows.editor.double.x86_64.exe
+      windows_template_asset:
+        description: Windows double export template asset name
+        required: true
+        default: godot.windows.template_release.double.x86_64.exe
+
+permissions:
+  contents: write
+
+jobs:
+  msix:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { path: fabric-packaging }
+      - uses: actions/checkout@v4
+        with: { repository: v-sekai-multiplayer-fabric/godot-loop-slice, path: godot-loop-slice }
+
+      - name: Fetch merged editor + Windows template from godot-images
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.inputs.godot_images_tag }}
+        run: |
+          mkdir -p tools templates
+          gh release download "$TAG" -R v-sekai-multiplayer-fabric/godot-images \
+            -p '${{ github.event.inputs.editor_asset }}' -D tools
+          gh release download "$TAG" -R v-sekai-multiplayer-fabric/godot-images \
+            -p '${{ github.event.inputs.windows_template_asset }}' -D templates
+
+      - name: Export Windows build
+        shell: bash
+        working-directory: godot-loop-slice
+        run: |
+          GODOT="$GITHUB_WORKSPACE/tools/${{ github.event.inputs.editor_asset }}"
+          mkdir -p build/windows
+          "$GODOT" --headless --import . || true
+          tmpl="$GITHUB_WORKSPACE/templates/${{ github.event.inputs.windows_template_asset }}"
+          "$GODOT" --headless --export-release "Windows Desktop" build/windows/loop-slice.exe || {
+            echo "If the export can't find a template, set the 'Windows Desktop' preset custom_template/release to: $tmpl"; exit 1; }
+          ls -la build/windows
+
+      - name: Import signing cert
+        if: ${{ secrets.LOOP_PFX_BASE64 != '' }}
+        shell: bash
+        run: echo "${{ secrets.LOOP_PFX_BASE64 }}" | base64 -d > loop.pfx
+
+      - name: Pack + sign MSIX
+        shell: pwsh
+        run: |
+          $pfx = if (Test-Path loop.pfx) { @("-PfxPath","loop.pfx","-PfxPassword","${{ secrets.LOOP_PFX_PASSWORD }}") } else { @() }
+          pwsh fabric-packaging/msix/pack.ps1 -BinDir godot-loop-slice/build/windows -Version "${{ github.event.inputs.version }}" -OutDir dist @pfx
+
+      - uses: actions/upload-artifact@v4
+        with: { name: loop-slice-msix, path: dist/*.msix }
