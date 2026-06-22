@@ -1,0 +1,46 @@
+# nFPM config — the loop-slice dedicated server as a Podman QUADLET package.
+# Ships the exported game data + a .container quadlet that runs it on the
+# published zone-godot-runtime image; no native engine binary on the host.
+#   packaging stage.sh first (produces stage/.../loop-slice.pck), then:
+#   nfpm pkg -f nfpm-quadlet.yaml -p rpm -t dist/
+#   nfpm pkg -f nfpm-quadlet.yaml -p deb -t dist/
+name: v-sekai-loop-slice-server-quadlet
+arch: amd64
+platform: linux
+version: ${LOOP_PKG_VERSION}
+section: games
+priority: optional
+maintainer: v-sekai <ernest.lee@chibifire.com>
+description: |
+  Loot-action loop-slice dedicated server, deployed as a rootless-capable Podman
+  quadlet on the ghcr.io/v-sekai-multiplayer-fabric/zone-godot-runtime image. The
+  exported game data installs under /usr/share/loop-slice and is bind-mounted into
+  the container; systemd manages the container via loop-slice-server.service.
+vendor: v-sekai
+homepage: https://github.com/v-sekai-multiplayer-fabric/fabric-godot-packaging
+license: MIT
+
+# Needs podman 4.4+ (quadlet generator). The runtime image is pulled on first start.
+depends:
+  - podman
+
+contents:
+  # Exported game data the quadlet bind-mounts at /game.
+  - src: stage/opt/org.v-sekai/loop-slice/0.1/bin/loop-slice.pck
+    dst: /usr/share/loop-slice/loop-slice.pck
+    file_info:
+      mode: 0644
+  # The quadlet unit; daemon-reload turns it into loop-slice-server.service.
+  - src: quadlet/loop-slice-server.container
+    dst: /usr/share/containers/systemd/loop-slice-server.container
+    file_info:
+      mode: 0644
+  - src: systemd/loop-slice-server.env
+    dst: /etc/default/loop-slice-server
+    type: config|noreplace
+    file_info:
+      mode: 0644
+
+scripts:
+  postinstall: scripts/postinstall-quadlet.sh
+  postremove: scripts/postremove-quadlet.sh

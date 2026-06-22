@@ -1,0 +1,33 @@
+# Podman quadlet — runs the loot-action loop-slice dedicated server as a
+# systemd-managed container off the published double-precision runtime image.
+# Installed by the v-sekai-loop-slice-server-quadlet rpm to
+# /usr/share/containers/systemd/; `systemctl daemon-reload` generates
+# loop-slice-server.service from it. Host content (the exported .pck) ships in
+# the same rpm under /usr/share/loop-slice and is bind-mounted read-only.
+[Unit]
+Description=Loot-action loop-slice dedicated server (Podman quadlet, zone-godot-runtime)
+After=network-online.target
+Wants=network-online.target
+
+[Container]
+# Pinned by immutable digest (:latest is blocklisted). This is the
+# zone-godot-runtime built from assembly tag v2026.06.22.1838-multiplayer-fabric
+# (also published as tag :72f44ef9). Bump on each godot-images build.
+Image=ghcr.io/v-sekai-multiplayer-fabric/zone-godot-runtime@sha256:6d66878a048ce90fe193f265797cd661733830c1ac2a5c174b2dc35977557b86
+# Game content from the rpm, read-only, with an SELinux relabel (:z).
+Volume=/usr/share/loop-slice:/game:ro,z
+EnvironmentFile=-/etc/default/loop-slice-server
+Environment=LOOP_HOST=0.0.0.0
+Environment=LOOP_PORT=4433
+# WebTransport/QUIC is UDP. Edit here (and LOOP_PORT) to change the bind port.
+PublishPort=4433:4433/udp
+# Headless authority: the runtime's /usr/local/bin/godot boots the exported pck
+# in dedicated-server mode. server.gd reads LOOP_HOST/LOOP_PORT from the env.
+Exec=/usr/local/bin/godot --headless --main-pack /game/loop-slice.pck --server
+
+[Service]
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,81 @@
+# Build the loop-slice dedicated-server QUADLET package (.rpm + .deb) and attach
+# it to a release. The quadlet runs the zone-godot-runtime image pinned to an
+# immutable digest (:latest is blocklisted) — pass it as runtime_digest. The game
+# source (godot-loop-slice) is checked out beside this repo; the editor + double
+# Linux template (to export the .pck) come from a godot-images release tag.
+name: Release quadlet
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Package version (e.g. 0.1.0 or 0.1.0-dev)
+        required: true
+        default: 0.1.0
+      runtime_digest:
+        description: "zone-godot-runtime digest to pin (sha256:...). Required — :latest is blocklisted."
+        required: true
+      godot_images_tag:
+        description: godot-images release tag providing the editor + Linux template
+        required: true
+      editor_asset:
+        description: Linux editor asset name in that release
+        required: true
+        default: godot.linuxbsd.editor.double.x86_64
+      linux_template_asset:
+        description: Linux double export template asset name
+        required: true
+        default: godot.linuxbsd.template_release.double.x86_64
+
+permissions:
+  contents: write
+
+jobs:
+  quadlet:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { path: fabric-godot-packaging }
+      - uses: actions/checkout@v4
+        with: { repository: v-sekai-multiplayer-fabric/godot-loop-slice, path: godot-loop-slice }
+
+      - name: Install nFPM
+        run: |
+          ver=2.47.0
+          curl -fsSL "https://github.com/goreleaser/nfpm/releases/download/v${ver}/nfpm_${ver}_Linux_x86_64.tar.gz" \
+            | sudo tar -xz -C /usr/local/bin nfpm
+          nfpm --version
+
+      - name: Fetch editor + Linux template from godot-images
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.inputs.godot_images_tag }}
+        run: |
+          mkdir -p tools ci-templates
+          gh release download "$TAG" -R v-sekai-multiplayer-fabric/godot-images \
+            -p '${{ github.event.inputs.editor_asset }}' -D tools
+          chmod +x "tools/${{ github.event.inputs.editor_asset }}"
+          gh release download "$TAG" -R v-sekai-multiplayer-fabric/godot-images \
+            -p '${{ github.event.inputs.linux_template_asset }}' -D ci-templates
+          chmod +x "ci-templates/${{ github.event.inputs.linux_template_asset }}"
+          tmpl="$PWD/ci-templates/${{ github.event.inputs.linux_template_asset }}"
+          sed -i "s|custom_template/release=.*|custom_template/release=\"$tmpl\"|" godot-loop-slice/export_presets.cfg
+
+      - name: Build quadlet rpm + deb (digest-pinned)
+        env:
+          GODOT: ${{ github.workspace }}/tools/${{ github.event.inputs.editor_asset }}
+          LOOP_PKG_VERSION: ${{ github.event.inputs.version }}
+          RUNTIME_DIGEST: ${{ github.event.inputs.runtime_digest }}
+        working-directory: fabric-godot-packaging
+        run: ./build-quadlet.sh
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ver="${{ github.event.inputs.version }}"
+          pre=""; case "$ver" in *-*) pre="--prerelease" ;; esac
+          gh release create "quadlet-v$ver" fabric-godot-packaging/dist/*quadlet*.deb fabric-godot-packaging/dist/*quadlet*.rpm \
+            --title "loop-slice server quadlet v$ver" $pre \
+            --notes "Podman quadlet package for the loop-slice dedicated server (zone-godot-runtime pinned by digest)." \
+            || gh release upload "quadlet-v$ver" fabric-godot-packaging/dist/*quadlet*.deb fabric-godot-packaging/dist/*quadlet*.rpm --clobber
