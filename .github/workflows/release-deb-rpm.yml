@@ -1,0 +1,79 @@
+# Build the Linux .deb + .rpm with the merged double-precision build and attach
+# them to a release on this packaging repo. The game source (godot-loop-slice) is
+# checked out beside this repo; the editor + the matching double Linux template
+# come from v-sekai-multiplayer-fabric/godot-images. nFPM writes the archives
+# natively — no dpkg/rpmbuild on the runner.
+name: Release deb/rpm
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Package version (e.g. 0.1.0 or 0.1.0-dev)
+        required: true
+        default: 0.1.0
+      godot_images_tag:
+        description: godot-images release tag providing the merged editor + double templates
+        required: true
+      editor_asset:
+        description: Linux editor asset name in that release
+        required: true
+        default: godot.linuxbsd.editor.double.x86_64
+      linux_template_asset:
+        description: Linux double export template asset name
+        required: true
+        default: godot.linuxbsd.template_release.double.x86_64
+
+permissions:
+  contents: write
+
+jobs:
+  debrpm:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { path: fabric-godot-packaging }
+      - uses: actions/checkout@v4
+        with: { repository: v-sekai-multiplayer-fabric/godot-loop-slice, path: godot-loop-slice }
+
+      - name: Install nFPM
+        run: |
+          ver=2.47.0
+          curl -fsSL "https://github.com/goreleaser/nfpm/releases/download/v${ver}/nfpm_${ver}_Linux_x86_64.tar.gz" \
+            | sudo tar -xz -C /usr/local/bin nfpm
+          nfpm --version
+
+      - name: Fetch merged editor + Linux template from godot-images
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.inputs.godot_images_tag }}
+        run: |
+          mkdir -p tools ci-templates
+          gh release download "$TAG" -R v-sekai-multiplayer-fabric/godot-images \
+            -p '${{ github.event.inputs.editor_asset }}' -D tools
+          chmod +x "tools/${{ github.event.inputs.editor_asset }}"
+          gh release download "$TAG" -R v-sekai-multiplayer-fabric/godot-images \
+            -p '${{ github.event.inputs.linux_template_asset }}' -D ci-templates
+          chmod +x "ci-templates/${{ github.event.inputs.linux_template_asset }}"
+          # Repoint the Linux/X11 preset's custom template at the fetched binary.
+          # This leg only exports Linux/X11, so a global replace is safe here.
+          tmpl="$PWD/ci-templates/${{ github.event.inputs.linux_template_asset }}"
+          sed -i "s|custom_template/release=.*|custom_template/release=\"$tmpl\"|" godot-loop-slice/export_presets.cfg
+
+      - name: Build deb + rpm
+        env:
+          GODOT: ${{ github.workspace }}/tools/${{ github.event.inputs.editor_asset }}
+          LOOP_PKG_VERSION: ${{ github.event.inputs.version }}
+        working-directory: fabric-godot-packaging
+        run: ./build.sh
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ver="${{ github.event.inputs.version }}"
+          pre=""; case "$ver" in *-*) pre="--prerelease" ;; esac
+          gh release create "v$ver" fabric-godot-packaging/dist/*.deb fabric-godot-packaging/dist/*.rpm \
+            --title "loop-slice v$ver" $pre \
+            --notes "Linux .deb/.rpm for the loot-action loop-slice (installs under /opt/org.v-sekai with a dedicated-server unit)." \
+            || gh release upload "v$ver" fabric-godot-packaging/dist/*.deb fabric-godot-packaging/dist/*.rpm --clobber

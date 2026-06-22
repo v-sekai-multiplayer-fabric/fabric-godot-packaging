@@ -58,11 +58,14 @@ jobs:
         working-directory: godot-loop-slice
         run: |
           GODOT="$GITHUB_WORKSPACE/tools/${{ github.event.inputs.editor_asset }}"
+          tmpl="$GITHUB_WORKSPACE/templates/${{ github.event.inputs.windows_template_asset }}"
+          # Repoint the Windows Desktop preset's custom template at the fetched
+          # binary. This leg only exports Windows Desktop, so a global replace is
+          # safe here.
+          sed -i "s|custom_template/release=.*|custom_template/release=\"$tmpl\"|" export_presets.cfg
           mkdir -p build/windows
           "$GODOT" --headless --import . || true
-          tmpl="$GITHUB_WORKSPACE/templates/${{ github.event.inputs.windows_template_asset }}"
-          "$GODOT" --headless --export-release "Windows Desktop" build/windows/loop-slice.exe || {
-            echo "If the export can't find a template, set the 'Windows Desktop' preset custom_template/release to: $tmpl"; exit 1; }
+          "$GODOT" --headless --export-release "Windows Desktop" build/windows/loop-slice.exe
           ls -la build/windows
 
       - name: Import signing cert
