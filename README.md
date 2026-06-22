@@ -1,4 +1,4 @@
-# fabric-packaging
+# fabric-godot-packaging
 
 Native packaging for the multiplayer-fabric stack, modelled on
 [`sinew-mocap/packaging`](https://github.com/sinew-mocap/packaging): a relocatable
@@ -15,7 +15,7 @@ This repo holds only the packaging recipe — the game source lives in
 
 ```
 loot-action-vertical-slice/
-├── fabric-packaging/      # this repo
+├── fabric-godot-packaging/      # this repo
 └── godot-loop-slice/      # the game it packages
 ```
 

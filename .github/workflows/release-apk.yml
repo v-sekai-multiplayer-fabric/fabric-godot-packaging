@@ -31,7 +31,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with: { path: fabric-packaging }
+        with: { path: fabric-godot-packaging }
       - uses: actions/checkout@v4
         with: { repository: v-sekai-multiplayer-fabric/godot-loop-slice, path: godot-loop-slice }
 

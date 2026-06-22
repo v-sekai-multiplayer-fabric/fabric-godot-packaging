@@ -33,7 +33,7 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
-        with: { path: fabric-packaging }
+        with: { path: fabric-godot-packaging }
       - uses: actions/checkout@v4
         with: { repository: v-sekai-multiplayer-fabric/godot-loop-slice, path: godot-loop-slice }
 
@@ -70,7 +70,7 @@ jobs:
         shell: pwsh
         run: |
           $pfx = if (Test-Path loop.pfx) { @("-PfxPath","loop.pfx","-PfxPassword","${{ secrets.LOOP_PFX_PASSWORD }}") } else { @() }
-          pwsh fabric-packaging/msix/pack.ps1 -BinDir godot-loop-slice/build/windows -Version "${{ github.event.inputs.version }}" -OutDir dist @pfx
+          pwsh fabric-godot-packaging/msix/pack.ps1 -BinDir godot-loop-slice/build/windows -Version "${{ github.event.inputs.version }}" -OutDir dist @pfx
 
       - uses: actions/upload-artifact@v4
         with: { name: loop-slice-msix, path: dist/*.msix }
