@@ -31,6 +31,10 @@ permissions:
 jobs:
   msix:
     runs-on: windows-latest
+    # The `secrets` context is not allowed in `if:` conditions, so surface the
+    # "is a signing cert configured?" check as a job env that `if:` can read.
+    env:
+      HAS_PFX: ${{ secrets.LOOP_PFX_BASE64 != '' }}
     steps:
       - uses: actions/checkout@v4
         with: { path: fabric-godot-packaging }
@@ -62,7 +66,7 @@ jobs:
           ls -la build/windows
 
       - name: Import signing cert
-        if: ${{ secrets.LOOP_PFX_BASE64 != '' }}
+        if: ${{ env.HAS_PFX == 'true' }}
         shell: bash
         run: echo "${{ secrets.LOOP_PFX_BASE64 }}" | base64 -d > loop.pfx
 
