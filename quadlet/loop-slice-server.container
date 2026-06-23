@@ -16,14 +16,20 @@ Wants=network-online.target
 Image=ghcr.io/v-sekai-multiplayer-fabric/zone-godot-runtime@sha256:6d66878a048ce90fe193f265797cd661733830c1ac2a5c174b2dc35977557b86
 # Game content from the rpm, read-only, with an SELinux relabel (:z).
 Volume=/usr/share/loop-slice:/game:ro,z
-EnvironmentFile=-/etc/default/loop-slice-server
+# Absolute path, no leading '-': quadlet's EnvironmentFile= is its own key (-> podman
+# --env-file), not systemd's, so a '-' prefix is taken as a relative path and breaks
+# (and podman --env-file errors on a missing file anyway). The package always ships
+# this file (config|noreplace), so it's present post-install.
+EnvironmentFile=/etc/default/loop-slice-server
 Environment=LOOP_HOST=0.0.0.0
-Environment=LOOP_PORT=4433
-# WebTransport/QUIC is UDP. Edit here (and LOOP_PORT) to change the bind port.
-PublishPort=4433:4433/udp
-# Headless authority: the runtime's /usr/local/bin/godot boots the exported pck
-# in dedicated-server mode. server.gd reads LOOP_HOST/LOOP_PORT from the env.
-Exec=/usr/local/bin/godot --headless --main-pack /game/loop-slice.pck --server
+Environment=LOOP_PORT=54400
+# server.gd reads LOOP_PORT (default 54400, ENet/UDP). Keep PublishPort in sync
+# with LOOP_PORT above (and in /etc/default/loop-slice-server) if you change it.
+PublishPort=54400:54400/udp
+# Headless authority: run server.gd (extends SceneTree) as the main loop from the
+# mounted pck — exactly as the native launcher does. NOT the client main scene;
+# --main-pack alone would boot res://main.tscn (the client) headless.
+Exec=/usr/local/bin/godot --headless --main-pack /game/loop-slice.pck --script res://server.gd
 
 [Service]
 Restart=on-failure

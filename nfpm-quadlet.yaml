@@ -24,6 +24,12 @@ license: MIT
 depends:
   - podman
 
+# The native v-sekai-loop-slice package ships its own loop-slice-server.service
+# and the same /etc/default/loop-slice-server. Quadlet vs native are two
+# mutually exclusive ways to host the server, so they must not be co-installed.
+conflicts:
+  - v-sekai-loop-slice
+
 contents:
   # Exported game data the quadlet bind-mounts at /game.
   - src: stage/opt/org.v-sekai/loop-slice/0.1/bin/loop-slice.pck

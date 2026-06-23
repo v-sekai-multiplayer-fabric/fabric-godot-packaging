@@ -59,6 +59,62 @@ sudo systemctl enable --now loop-slice-server      # binds LOOP_HOST:LOOP_PORT
 sudoedit /etc/default/loop-slice-server            # then: systemctl restart loop-slice-server
 ```
 
+## Host a server via Podman quadlet (no native engine on the host)
+
+A second, independent package runs the dedicated server as a **Podman quadlet**
+on the published `zone-godot-runtime` image — there's no Godot binary on the
+host, only the exported `.pck`. It ships `v-sekai-loop-slice-server-quadlet`
+(`.deb`/`.rpm`), which installs:
+
+```
+/usr/share/loop-slice/loop-slice.pck                       # exported game data, bind-mounted :ro into the container
+/usr/share/containers/systemd/loop-slice-server.container  # the quadlet; daemon-reload generates loop-slice-server.service
+/etc/default/loop-slice-server                             # LOOP_HOST/LOOP_PORT (config|noreplace)
+```
+
+> **Note:** `server.gd` reads `LOOP_HOST`/`LOOP_PORT` (default `0.0.0.0:54400`,
+> ENet/UDP). To change the port, edit `LOOP_PORT` in `/etc/default/loop-slice-server`
+> **and** the quadlet's `PublishPort=` (a quadlet can't read the env at unit-generate
+> time), then `systemctl daemon-reload && systemctl restart loop-slice-server`.
+
+This package and the native `v-sekai-loop-slice` both provide a
+`loop-slice-server.service` and own `/etc/default/loop-slice-server`, so they
+declare a mutual `Conflicts:` — install **one** way to host, not both.
+
+```sh
+# GODOT must be the merged double-precision editor (as above). The quadlet needs
+# ONLY the .pck, so stage.sh exports it template-free with --export-pack.
+GODOT=godot.linuxbsd.editor.double.x86_64 ./build-quadlet.sh
+# -> dist/v-sekai-loop-slice-server-quadlet_0.1.0_amd64.deb
+#    dist/v-sekai-loop-slice-server-quadlet-0.1.0-1.x86_64.rpm
+```
+
+`build-quadlet.sh` first runs `bin/pin-runtime-digest.sh`, which rewrites the
+quadlet's `Image=` to an **immutable digest** (`:latest` is blocklisted —
+resolved from `$RUNTIME_DIGEST`, then `skopeo`, then the latest `godot-images`
+build log). Then `stage.sh` with `PCK_ONLY=1` exports just the `.pck`, and nFPM
+wraps the `.deb`/`.rpm`. After install:
+
+```sh
+sudo systemctl daemon-reload                       # generate the unit from the quadlet
+sudo systemctl enable --now loop-slice-server      # pulls the image, binds 0.0.0.0:54400/udp
+```
+
+The `release-quadlet.yml` workflow does the same on CI, taking the
+`runtime_digest` to pin as a required `workflow_dispatch` input, then runs
+`test/server_up_test.sh` to **boot the server on the runtime image and wait for
+its `LOOPSRV ready` log** before publishing.
+
+## Tests
+
+```sh
+./test/packaging_test.sh    # fast static checks: env-file path, digest pin,
+                            # mutual Conflicts:, server.gd launch + bound port
+./test/server_up_test.sh    # integration: actually boot the server on the runtime
+                            # image and wait for "LOOPSRV ready" (soft-skips if the
+                            # image can't be pulled; LOOP_REQUIRE_SERVER_UP=1 enforces)
+```
+
 ## Quest 3 APK and Windows MSIX
 
 The two `.github/workflows/release-*.yml` legs check out `godot-loop-slice`,

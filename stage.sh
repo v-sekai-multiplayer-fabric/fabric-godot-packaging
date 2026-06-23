@@ -43,12 +43,26 @@ say() { printf '  %-22s %s\n' "$1" "$2"; }
 rm -rf "$stage"
 mkdir -p "$bindst" "$sharedst"
 
+# ── Quadlet path: pck only ────────────────────────────────────────────────────
+# The dedicated-server quadlet runs the published zone-godot-runtime image's
+# godot with --main-pack, so it needs ONLY the exported pck — no standalone
+# Linux export template. export-pack produces that without a template.
+if [ -n "${PCK_ONLY:-}" ]; then
+  ( cd "$root" && "$GODOT" --headless --import . >/dev/null 2>&1 || true )
+  ( cd "$root" && "$GODOT" --headless --export-pack "Linux/X11" "build/linux/loop-slice.pck" )
+  [ -s "$root/build/linux/loop-slice.pck" ] || { echo "pck export missing/empty — check the Linux/X11 preset for $GODOT" >&2; exit 1; }
+  install -m644 "$root/build/linux/loop-slice.pck" "$bindst/loop-slice.pck"; say loop-slice.pck ok
+  echo "staged (pck-only) -> $stage"
+  exit 0
+fi
+
 # ── Export the Linux/X11 build (binary + sidecar pck, embed_pck=false) ────────
 # The exported executable auto-mounts loop-slice.pck when colocated, so both go
 # in bin/ together.  --import first so a clean checkout has its .godot cache.
 ( cd "$root" && "$GODOT" --headless --import . >/dev/null 2>&1 || true )
+rm -f "$root/build/linux/loop-slice.x86_64"   # don't let a stale stub satisfy the check below
 ( cd "$root" && "$GODOT" --headless --export-release "Linux/X11" "build/linux/loop-slice.x86_64" )
-[ -x "$root/build/linux/loop-slice.x86_64" ] || { echo "Linux export missing — check the double templates for $GODOT" >&2; exit 1; }
+file "$root/build/linux/loop-slice.x86_64" 2>/dev/null | grep -q ELF || { echo "Linux export missing or not a real binary — check the double templates for $GODOT" >&2; exit 1; }
 
 install -m755 "$root/build/linux/loop-slice.x86_64" "$bindst/loop-slice.x86_64";  say loop-slice.x86_64 ok
 install -m644 "$root/build/linux/loop-slice.pck"     "$bindst/loop-slice.pck";     say loop-slice.pck ok

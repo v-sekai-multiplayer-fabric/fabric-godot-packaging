@@ -14,7 +14,7 @@ Group=loop-slice
 # reads LOOP_HOST/LOOP_PORT from the environment.
 EnvironmentFile=-/etc/default/loop-slice-server
 Environment=LOOP_HOST=0.0.0.0
-Environment=LOOP_PORT=4433
+Environment=LOOP_PORT=54400
 
 ExecStart=/opt/org.v-sekai/loop-slice/0.1/bin/loop-slice-server
 

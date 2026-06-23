@@ -1,0 +1,18 @@
+# Fast static checks on the packaging recipe (no GODOT/engine build, no network).
+# Guards the quadlet env-file path, the runtime digest pin, and the native/quadlet
+# mutual Conflicts:. podman is preinstalled on ubuntu-latest, so the quadlet
+# generator dry-run runs too.
+name: Test
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  packaging:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run packaging tests
+        run: ./test/packaging_test.sh
