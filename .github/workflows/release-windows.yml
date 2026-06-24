@@ -1,10 +1,9 @@
-# windows-latest CI: export the Win64 loop-slice with the merged double build,
-# then pack/sign one .msix. Set secrets LOOP_PFX_BASE64 + LOOP_PFX_PASSWORD for a
-# trusted cert; without them the job self-signs a TEST cert (installable only
-# after trusting it). The game source (godot-loop-slice) is checked out beside
-# this repo; the editor + double Windows template come from
+# Export both the flatscreen (Windows Desktop) and the OpenXR build with the
+# merged double-precision editor, pack each as an MSIX, and publish both to a
+# single GitHub release.  The game source (godot-loop-slice) is checked out
+# beside this repo; the merged editor + double Windows template come from
 # v-sekai-multiplayer-fabric/godot-images.
-name: Release MSIX
+name: Release Windows
 
 on:
   workflow_dispatch:
@@ -29,10 +28,8 @@ permissions:
   contents: write
 
 jobs:
-  msix:
+  windows:
     runs-on: windows-latest
-    # The `secrets` context is not allowed in `if:` conditions, so surface the
-    # "is a signing cert configured?" check as a job env that `if:` can read.
     env:
       HAS_PFX: ${{ secrets.LOOP_PFX_BASE64 != '' }}
     steps:
@@ -53,31 +50,66 @@ jobs:
           gh release download "$TAG" -R v-sekai-multiplayer-fabric/godot-images \
             -p '${{ github.event.inputs.windows_template_asset }}' -D templates
 
-      - name: Export Windows build
+      - name: Export Windows Desktop + OpenXR builds
         shell: bash
         working-directory: godot-loop-slice
         run: |
           GODOT="$GITHUB_WORKSPACE/tools/${{ github.event.inputs.editor_asset }}"
           tmpl="$GITHUB_WORKSPACE/templates/${{ github.event.inputs.windows_template_asset }}"
-          # Repoint the Windows Desktop preset's custom template at the fetched
-          # binary. This leg only exports Windows Desktop, so a global replace is
-          # safe here.
           sed -i "s|custom_template/release=.*|custom_template/release=\"$tmpl\"|" export_presets.cfg
-          mkdir -p build/windows
+          mkdir -p build/windows build/openxr
           "$GODOT" --headless --import . || true
           "$GODOT" --headless --export-release "Windows Desktop" build/windows/loop-slice.exe
-          ls -la build/windows
+          "$GODOT" --headless --export-release "OpenXR" build/openxr/loop-slice.exe
+          ls -la build/windows build/openxr
 
       - name: Import signing cert
         if: ${{ env.HAS_PFX == 'true' }}
         shell: bash
         run: echo "${{ secrets.LOOP_PFX_BASE64 }}" | base64 -d > loop.pfx
 
-      - name: Pack + sign MSIX
+      - name: Pack + sign MSIXes
         shell: pwsh
         run: |
           $pfx = if (Test-Path loop.pfx) { @("-PfxPath","loop.pfx","-PfxPassword","${{ secrets.LOOP_PFX_PASSWORD }}") } else { @() }
-          pwsh fabric-godot-packaging/msix/pack.ps1 -BinDir godot-loop-slice/build/windows -Version "${{ github.event.inputs.version }}" -OutDir dist @pfx
+          $ver = "${{ github.event.inputs.version }}"
+          pwsh fabric-godot-packaging/msix/pack.ps1 -BinDir godot-loop-slice/build/windows -Version $ver -OutDir dist @pfx
+          Rename-Item "dist/v-sekai-loop-slice-$ver.msix" "v-sekai-loop-slice-desktop-$ver.msix"
+          pwsh fabric-godot-packaging/msix/pack.ps1 -BinDir godot-loop-slice/build/openxr -Version $ver -OutDir dist @pfx
+          Rename-Item "dist/v-sekai-loop-slice-$ver.msix" "v-sekai-loop-slice-openxr-$ver.msix"
 
       - uses: actions/upload-artifact@v4
-        with: { name: loop-slice-msix, path: dist/*.msix }
+        with:
+          name: loop-slice-windows-msix
+          path: dist/v-sekai-loop-slice-desktop-*.msix
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: loop-slice-openxr-msix
+          path: dist/v-sekai-loop-slice-openxr-*.msix
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          ver="${{ github.event.inputs.version }}"
+          pre=""; case "$ver" in *-*) pre="--prerelease" ;; esac
+          gh release create "windows-v$ver" \
+            dist/v-sekai-loop-slice-desktop-*.msix \
+            dist/v-sekai-loop-slice-openxr-*.msix \
+            --title "loop-slice Windows v$ver" $pre \
+            --notes "$(cat <<'EOF'
+Windows builds (x86_64, double precision) for the loot-action loop-slice.
+
+**Flatscreen** (\`-desktop-\`): standard monitor play, no XR runtime required.
+
+**OpenXR** (\`-openxr-\`): requires an OpenXR runtime installed and active before launch. The active runtime attaches automatically.
+
+**Install**: sideload the MSIX (trust the TEST cert if no production cert is configured), then launch *Loot-Action Loop Slice* from the Start menu.
+EOF
+            )" \
+            || gh release upload "windows-v$ver" \
+                 dist/v-sekai-loop-slice-desktop-*.msix \
+                 dist/v-sekai-loop-slice-openxr-*.msix \
+                 --clobber
