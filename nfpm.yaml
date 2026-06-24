@@ -23,6 +23,13 @@ vendor: v-sekai
 homepage: https://github.com/v-sekai-multiplayer-fabric/godot-loop-slice
 license: MIT
 
+# This package ships a native loop-slice-server.service and owns
+# /etc/default/loop-slice-server. The quadlet package generates a unit of the
+# same name from its .container and ships the same env file, so the two are two
+# mutually exclusive ways to host the server — they must not be co-installed.
+conflicts:
+  - v-sekai-loop-slice-server-quadlet
+
 # Whole staged vendor tree -> filesystem root.  One mapping keeps deb and rpm
 # byte-identical in layout and lets stage.sh own the structure.
 contents:

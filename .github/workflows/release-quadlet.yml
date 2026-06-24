@@ -29,6 +29,7 @@ on:
 
 permissions:
   contents: write
+  packages: read   # pull the zone-godot-runtime image for the server-up smoke test
 
 jobs:
   quadlet:
@@ -68,6 +69,19 @@ jobs:
           RUNTIME_DIGEST: ${{ github.event.inputs.runtime_digest }}
         working-directory: fabric-godot-packaging
         run: ./build-quadlet.sh
+
+      # Actually boot the dedicated server from the freshly-staged pck on the
+      # pinned runtime image before publishing. The staged pck and the digest-
+      # pinned quadlet Image= are already in place from build-quadlet.sh, so the
+      # test reads the image straight from the quadlet. REQUIRE makes a skip fail.
+      - name: Smoke test — turn the server on
+        env:
+          GH_TOKEN: ${{ github.token }}
+          LOOP_REQUIRE_SERVER_UP: "1"
+        working-directory: fabric-godot-packaging
+        run: |
+          echo "${{ github.token }}" | podman login ghcr.io -u '${{ github.actor }}' --password-stdin
+          ./test/server_up_test.sh
 
       - name: Publish release
         env:

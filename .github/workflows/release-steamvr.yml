@@ -1,0 +1,87 @@
+# Export the SteamVR build (Windows x86_64, OpenXR, single-EXE) and attach it
+# to a release on this packaging repo for external feedback distribution.
+# SteamVR implements the OpenXR runtime; no Steamworks SDK is needed.
+# The game source (godot-loop-slice) is checked out beside this repo; the
+# merged editor + double Windows template come from godot-images.
+name: Release SteamVR
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Release version (e.g. 0.1.0)
+        required: true
+        default: 0.1.0
+      godot_images_tag:
+        description: godot-images release tag providing the merged editor + double templates
+        required: true
+      editor_asset:
+        description: Windows editor asset name in that release
+        required: true
+        default: godot.windows.editor.double.x86_64.exe
+      windows_template_asset:
+        description: Windows double export template asset name
+        required: true
+        default: godot.windows.template_release.double.x86_64.exe
+
+permissions:
+  contents: write
+
+jobs:
+  steamvr:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { path: fabric-godot-packaging }
+      - uses: actions/checkout@v4
+        with: { repository: v-sekai-multiplayer-fabric/godot-loop-slice, path: godot-loop-slice }
+
+      - name: Fetch merged editor + Windows template from godot-images
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.inputs.godot_images_tag }}
+        run: |
+          mkdir -p tools templates
+          gh release download "$TAG" -R v-sekai-multiplayer-fabric/godot-images \
+            -p '${{ github.event.inputs.editor_asset }}' -D tools
+          gh release download "$TAG" -R v-sekai-multiplayer-fabric/godot-images \
+            -p '${{ github.event.inputs.windows_template_asset }}' -D templates
+
+      - name: Export SteamVR build
+        shell: bash
+        working-directory: godot-loop-slice
+        run: |
+          GODOT="$GITHUB_WORKSPACE/tools/${{ github.event.inputs.editor_asset }}"
+          tmpl="$GITHUB_WORKSPACE/templates/${{ github.event.inputs.windows_template_asset }}"
+          sed -i "s|custom_template/release=.*|custom_template/release=\"$tmpl\"|" export_presets.cfg
+          mkdir -p build/steamvr
+          "$GODOT" --headless --import . || true
+          "$GODOT" --headless --export-release "SteamVR" build/steamvr/loop-slice-steamvr.exe
+          ls -la build/steamvr/loop-slice-steamvr.exe
+
+      - name: Package as ZIP
+        shell: bash
+        run: |
+          ver="${{ github.event.inputs.version }}"
+          mkdir -p dist
+          cd godot-loop-slice/build/steamvr
+          7z a "$GITHUB_WORKSPACE/dist/loop-slice-steamvr-v${ver}-win64.zip" loop-slice-steamvr.exe
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          ver="${{ github.event.inputs.version }}"
+          gh release create "steamvr-v$ver" dist/loop-slice-steamvr-v${ver}-win64.zip \
+            --title "loop-slice SteamVR v$ver" \
+            --notes "$(cat <<'EOF'
+Windows SteamVR build (x86_64, double precision, OpenXR) for external feedback.
+
+**Requirements**: SteamVR installed and running before launch. No other runtime needed.
+
+**Install**: extract the zip, run \`loop-slice-steamvr.exe\`. SteamVR will attach automatically via OpenXR.
+EOF
+            )" \
+            || gh release upload "steamvr-v$ver" dist/loop-slice-steamvr-v${ver}-win64.zip --clobber

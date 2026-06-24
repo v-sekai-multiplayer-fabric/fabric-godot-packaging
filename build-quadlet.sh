@@ -11,7 +11,7 @@ export LOOP_PKG_VERSION="${LOOP_PKG_VERSION:-0.1.0}"
 dist="$here/dist"; mkdir -p "$dist"
 
 "$here/bin/pin-runtime-digest.sh"      # rewrite Image= to a digest (no :latest)
-"$here/stage.sh"                       # export the game -> stage/.../loop-slice.pck
+PCK_ONLY=1 "$here/stage.sh"            # export-pack the game -> stage/.../loop-slice.pck (no template needed)
 
 cd "$here"
 for fmt in rpm deb; do
